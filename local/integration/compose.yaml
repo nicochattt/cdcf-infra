@@ -1,0 +1,12 @@
+name: cdcf-integration
+
+include:
+  - path:
+      - ../production-simulation/docker-compose.yml
+      - ./overrides/postgres.yaml
+  - path:
+      - ../application-simulation/docker-compose.yml
+      - ./overrides/applications.yaml
+  - path:
+      - ../nginx-simulation/docker-compose.yml
+      - ./overrides/nginx.yaml
