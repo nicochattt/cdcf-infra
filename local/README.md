@@ -89,6 +89,11 @@ Compose model when `local/**` or the shared production nginx configuration
 changes. These lightweight checks run on pull requests, merge-queue entries and
 pushes to `main`.
 
+The required checks also render the shared nginx template with both `http` and
+`https` through the official `nginx:alpine` template mechanism. They verify the
+preserved `$http_host` directives, protocol substitution, CSP and final nginx
+syntax without contacting production.
+
 The same workflow exposes a manual `workflow_dispatch` run that additionally
 builds, starts and verifies the complete production-like environment. Its cleanup
 step always removes the CI project's containers, networks and volumes.

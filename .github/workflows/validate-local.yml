@@ -75,10 +75,40 @@ jobs:
       - name: Render and validate Compose model
         run: docker compose ${{ matrix.files }} config --quiet
 
+  nginx-template:
+    name: Validate shared nginx template
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Exercise the same template renderer used by nginx:alpine in production
+      # and in the fast dev proxy. Dummy host entries let nginx -t resolve both
+      # upstream names without starting the application stack.
+      - name: Render HTTP and HTTPS configurations
+        run: |
+          for protocol in http https; do
+            docker run --rm \
+              --add-host zitadel:127.0.0.1 \
+              --add-host zitadel-login:127.0.0.1 \
+              -e "NGINX_FORWARDED_PROTO=$protocol" \
+              -v "$PWD/auth/nginx/zitadel.conf:/etc/nginx/templates/default.conf.template:ro" \
+              nginx:alpine sh -ec '
+                /docker-entrypoint.d/20-envsubst-on-templates.sh
+                config=/etc/nginx/conf.d/default.conf
+                test "$(grep -F -c '\''proxy_set_header Host $http_host;'\'' "$config")" -eq 2
+                test "$(grep -F -c '\''proxy_set_header X-Forwarded-Host $http_host;'\'' "$config")" -eq 2
+                test "$(grep -F -c "proxy_set_header X-Forwarded-Proto $NGINX_FORWARDED_PROTO;" "$config")" -eq 2
+                ! grep -F '\''${NGINX_FORWARDED_PROTO}'\'' "$config"
+                grep -F '\''Content-Security-Policy'\'' "$config" >/dev/null
+                nginx -t
+              '
+          done
+
   integration:
     name: Run full Docker integration
     if: github.event_name == 'workflow_dispatch'
-    needs: [scripts, compose]
+    needs: [scripts, compose, nginx-template]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
