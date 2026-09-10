@@ -8,6 +8,8 @@ readonly expected_database_ip='172.31.250.10'
 readonly expected_issuer='http://localhost:8090'
 readonly openfga_key="${OPENFGA_PRESHARED_KEY:-local-openfga-api-key}"
 
+tmp_files=()
+
 compose() {
   docker compose "$@"
 }
@@ -26,6 +28,14 @@ fail() {
 pass() {
   echo "[verify] OK: $*"
 }
+
+cleanup() {
+  local file
+  for file in "${tmp_files[@]}"; do
+    rm -f "$file"
+  done
+}
+trap cleanup EXIT
 
 assert_running() {
   local service=$1 container_id status
@@ -63,7 +73,8 @@ resolved_database_ip="$(docker inspect \
   || fail "Zitadel database host mapping is ${resolved_database_ip:-missing}, expected $expected_database_ip"
 pass "Zitadel maps host.docker.internal to $expected_database_ip"
 
-issuer_response="$(curl --fail --silent -H 'Host: localhost:8090' \
+issuer_response="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+  -H 'Host: localhost:8090' \
   http://127.0.0.1:18080/.well-known/openid-configuration)" \
   || fail 'Zitadel OIDC discovery request failed'
 actual_issuer="$(sed -n 's/.*"issuer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$issuer_response")"
@@ -95,9 +106,17 @@ pass 'Login V2 PAT exists and is readable through the read-only consumer mount'
 
 login_pat="$(compose exec -T zitadel-login node -e \
   "process.stdout.write(require('fs').readFileSync('/zitadel-data/login-client.pat','utf8').trim())")"
+login_local_admin_tmp="$(mktemp)"
+tmp_files+=("$login_local_admin_tmp")
+login_email_tmp="$(mktemp)"
+tmp_files+=("$login_email_tmp")
+login_actual_tmp="$(mktemp)"
+tmp_files+=("$login_actual_tmp")
+
 try_login() {
   local login_name=$1 output_file=$2
-  curl --silent --show-error --output "$output_file" --write-out '%{http_code}' \
+  curl --silent --show-error --connect-timeout 5 --max-time 15 \
+    --output "$output_file" --write-out '%{http_code}' \
     -H 'Host: localhost:8090' \
     -H "Authorization: Bearer $login_pat" \
     -H 'Content-Type: application/json' \
@@ -105,18 +124,19 @@ try_login() {
     --data "{\"checks\":{\"user\":{\"loginName\":\"$login_name\"},\"password\":{\"password\":\"LocalTest1!\"}}}"
 }
 
-local_admin_code="$(try_login local-admin /tmp/application-simulation-login-local-admin.json)"
-email_code="$(try_login admin@example.test /tmp/application-simulation-login-email.json)"
-actual_login_code="$(try_login "$actual_bootstrap_login" /tmp/application-simulation-login-actual.json)"
+local_admin_code="$(try_login local-admin "$login_local_admin_tmp")" \
+  || fail 'bootstrap login request for local-admin failed'
+email_code="$(try_login admin@example.test "$login_email_tmp")" \
+  || fail 'bootstrap login request for admin@example.test failed'
+actual_login_code="$(try_login "$actual_bootstrap_login" "$login_actual_tmp")" \
+  || fail "bootstrap login request for $actual_bootstrap_login failed"
+
 [[ "$local_admin_code" == 404 && "$email_code" == 404 ]] \
   || fail "unexpected bootstrap aliases: local-admin HTTP $local_admin_code, email HTTP $email_code; expected both 404"
 [[ "$actual_login_code" == 201 ]] \
   || fail "actual bootstrap login $actual_bootstrap_login returned HTTP $actual_login_code, expected 201"
-grep -F '"sessionToken"' /tmp/application-simulation-login-actual.json >/dev/null \
+grep -F '"sessionToken"' "$login_actual_tmp" >/dev/null \
   || fail 'successful bootstrap login response contains no session token'
-rm -f /tmp/application-simulation-login-local-admin.json \
-  /tmp/application-simulation-login-email.json \
-  /tmp/application-simulation-login-actual.json
 pass "Zitadel v4.15.0 accepts $actual_bootstrap_login; local-admin and admin@example.test are not login names"
 
 assert_running zitadel-login
@@ -138,18 +158,24 @@ compose exec -T openfga /usr/local/bin/grpc_health_probe -addr=localhost:8081 >/
   || fail 'OpenFGA gRPC health probe failed'
 pass 'OpenFGA gRPC health probe succeeds'
 
-unauthenticated_code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-  http://127.0.0.1:18081/stores)"
+unauthenticated_code="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
+  --output /dev/null --write-out '%{http_code}' \
+  http://127.0.0.1:18081/stores)" \
+  || fail 'OpenFGA unauthenticated request failed'
 [[ "$unauthenticated_code" == 401 ]] \
   || fail "OpenFGA unauthenticated request returned HTTP $unauthenticated_code, expected 401"
-authenticated_code="$(curl --silent --output /tmp/application-simulation-openfga.json \
-  --write-out '%{http_code}' -H "Authorization: Bearer $openfga_key" \
-  http://127.0.0.1:18081/stores)"
+
+openfga_tmp="$(mktemp)"
+tmp_files+=("$openfga_tmp")
+authenticated_code="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
+  --output "$openfga_tmp" --write-out '%{http_code}' \
+  -H "Authorization: Bearer $openfga_key" \
+  http://127.0.0.1:18081/stores)" \
+  || fail 'OpenFGA authenticated request failed'
 [[ "$authenticated_code" == 200 ]] \
   || fail "OpenFGA authenticated request returned HTTP $authenticated_code, expected 200"
-grep -F '"stores"' /tmp/application-simulation-openfga.json >/dev/null \
+grep -F '"stores"' "$openfga_tmp" >/dev/null \
   || fail 'OpenFGA authenticated response is not a stores document'
-rm -f /tmp/application-simulation-openfga.json
 pass 'OpenFGA HTTP API is reachable and preshared authentication is enforced'
 
 echo '[verify] All application simulation checks passed.'

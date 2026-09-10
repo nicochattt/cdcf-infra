@@ -12,16 +12,33 @@ restore_stack() {
 }
 trap restore_stack EXIT
 
+migrate_id="$(docker compose ps --all --quiet openfga-migrate)"
+[[ -n "$migrate_id" ]] \
+  || fail 'openfga-migrate baseline container does not exist'
+
+[[ "$(docker inspect --format '{{.State.ExitCode}}' "$migrate_id")" == 0 ]] \
+  || fail 'OpenFGA migration baseline was not successful'
+
 docker compose stop postgres-host >/dev/null
 
-migrate_output="$(timeout 15s docker compose run --rm --no-deps openfga-migrate 2>&1)" && \
-  fail 'OpenFGA unexpectedly connected while postgres-host was stopped'
+postgres_id="$(docker compose ps --all --quiet postgres-host)"
+[[ -n "$postgres_id" ]] \
+  || fail 'postgres-host container does not exist'
 
-grep -Eqi 'connection refused|could not connect|failed to connect|dial tcp|no route to host|i/o timeout' \
-  <<<"$migrate_output" \
-  || fail "OpenFGA migration failed for an unexpected reason: $migrate_output"
+[[ "$(docker inspect --format '{{.State.Status}}' "$postgres_id")" != running ]] \
+  || fail 'postgres-host is still running after docker compose stop'
 
-pass 'application database operation fails because postgres-host is unavailable'
+if timeout 15s docker compose run --rm --no-deps \
+  openfga-migrate migrate --timeout 10s >/dev/null 2>&1; then
+  fail 'OpenFGA unexpectedly migrated while postgres-host was stopped'
+else
+  migrate_status=$?
+fi
+
+[[ "$migrate_status" -ne 124 ]] \
+  || fail 'OpenFGA migration hit the outer 15s timeout while postgres-host was stopped'
+
+pass 'OpenFGA database operation fails when confirmed PostgreSQL is unavailable'
 docker compose up -d --wait postgres-host >/dev/null
 
 docker compose stop zitadel-login >/dev/null

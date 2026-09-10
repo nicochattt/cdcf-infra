@@ -13,6 +13,13 @@ fail() {
     exit 1
 }
 
+discovery_file="$(mktemp)"
+
+cleanup() {
+    rm -f "$discovery_file"
+}
+trap cleanup EXIT
+
 NETWORK=cdcf-auth-test_default
 SOURCE_CONFIG=/etc/nginx/production/zitadel.conf
 RUNTIME_CONFIG=/etc/nginx/conf.d/default.conf
@@ -84,21 +91,21 @@ curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
 ok 'GET /debug/ready succeeds through local nginx'
 
 discovery_code=$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
-    --output /tmp/nginx-simulation-discovery.json --write-out '%{http_code}' \
+    --output "$discovery_file" --write-out '%{http_code}' \
     -H 'Host: localhost:8090' \
     http://127.0.0.1:8090/.well-known/openid-configuration) \
     || fail 'OIDC discovery request failed'
 [ "$discovery_code" = 200 ] \
     || fail "OIDC discovery returned HTTP $discovery_code instead of 200"
+
 expected_issuer=http://localhost:8090
 actual_issuer=$(sed -n 's/.*"issuer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    /tmp/nginx-simulation-discovery.json | head -n 1)
+    "$discovery_file" | head -n 1)
 [ -n "$actual_issuer" ] \
     || fail 'OIDC discovery response does not contain a readable issuer'
 [ "$actual_issuer" = "$expected_issuer" ] \
     || fail "unexpected OIDC issuer: $actual_issuer, expected $expected_issuer"
 ok "OIDC issuer is $actual_issuer"
-rm -f /tmp/nginx-simulation-discovery.json
 ok 'real OIDC discovery route succeeds through nginx and Zitadel'
 
 console_code=$(curl --silent --show-error --connect-timeout 5 --max-time 15 \

@@ -7,8 +7,18 @@ readonly expected_issuer='http://localhost:8090'
 readonly openfga_key="${OPENFGA_PRESHARED_KEY:-local-openfga-api-key}"
 cd "$script_dir/.."
 
+tmp_files=()
+
 pass() { echo "[verify] OK: $*"; }
 fail() { echo "[verify] FAIL: $*" >&2; exit 1; }
+
+cleanup() {
+  local file
+  for file in "${tmp_files[@]}"; do
+    rm -f "$file"
+  done
+}
+trap cleanup EXIT
 
 container_id() {
   docker compose ps --quiet "$1"
@@ -35,9 +45,9 @@ assert_host_mapping() {
   local service=$1 id hosts_file actual
   id="$(container_id "$service")"
   hosts_file="$(mktemp)"
+  tmp_files+=("$hosts_file")
   docker cp "$id:/etc/hosts" "$hosts_file" >/dev/null
   actual="$(awk '$2 == "host.docker.internal" {print $1}' "$hosts_file")"
-  rm -f "$hosts_file"
   [[ "$actual" == "$expected_database_ip" ]] \
     || fail "$service resolves host.docker.internal to ${actual:-nothing}, expected $expected_database_ip"
   pass "$service resolves host.docker.internal to $expected_database_ip"
@@ -100,15 +110,17 @@ curl --fail --silent --show-error --connect-timeout 5 --max-time 15 -H 'Host: lo
   || fail 'full-path Login V2 health route failed'
 pass 'client -> nginx -> Zitadel/Login V2 paths succeed with the expected issuer'
 
+openfga_tmp="$(mktemp)"
+tmp_files+=("$openfga_tmp")
+
 openfga_code="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
-  --output /tmp/integration-openfga.json --write-out '%{http_code}' \
+  --output "$openfga_tmp" --write-out '%{http_code}' \
   -H "Authorization: Bearer $openfga_key" http://127.0.0.1:18081/stores)" \
   || fail 'authenticated OpenFGA request failed'
 
 [[ "$openfga_code" == 200 ]] || fail "authenticated OpenFGA request returned HTTP $openfga_code"
-grep -F '"stores"' /tmp/integration-openfga.json >/dev/null \
+grep -F '"stores"' "$openfga_tmp" >/dev/null \
   || fail 'OpenFGA response is not a stores document'
-rm -f /tmp/integration-openfga.json
 pass 'authenticated OpenFGA request succeeds through its diagnostic loopback port'
 
 echo '[verify] All cross-component integration checks passed.'
