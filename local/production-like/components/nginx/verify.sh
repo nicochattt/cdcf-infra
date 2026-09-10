@@ -51,9 +51,13 @@ docker compose exec -T nginx-host getent hosts zitadel-login >/dev/null 2>&1 \
     || fail 'Docker DNS cannot resolve required zitadel-login'
 ok 'Docker DNS resolves zitadel and zitadel-login'
 
-docker compose exec -T nginx-host curl --fail --silent http://zitadel:8080/debug/ready >/dev/null \
+docker compose exec -T nginx-host curl --fail --silent --show-error \
+    --connect-timeout 5 --max-time 15 \
+    http://zitadel:8080/debug/ready >/dev/null \
     || fail 'Zitadel is not reachable from nginx-host'
-docker compose exec -T nginx-host curl --fail --silent http://zitadel-login:3000/ui/v2/login/healthy >/dev/null \
+docker compose exec -T nginx-host curl --fail --silent --show-error \
+    --connect-timeout 5 --max-time 15 \
+    http://zitadel-login:3000/ui/v2/login/healthy >/dev/null \
     || fail 'Zitadel Login V2 is not reachable from nginx-host'
 ok 'real Zitadel and Zitadel Login V2 services are reachable from nginx-host'
 
@@ -74,13 +78,16 @@ docker compose exec -T nginx-host grep -F 'Content-Security-Policy' "$RUNTIME_CO
     || fail 'production CSP is missing from runtime configuration'
 ok 'production CSP is preserved'
 
-curl --fail --silent http://127.0.0.1:8090/debug/ready >/dev/null \
+curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+    http://127.0.0.1:8090/debug/ready >/dev/null \
     || fail 'local nginx readiness route failed'
 ok 'GET /debug/ready succeeds through local nginx'
 
-discovery_code=$(curl --silent --output /tmp/nginx-simulation-discovery.json --write-out '%{http_code}' \
+discovery_code=$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
+    --output /tmp/nginx-simulation-discovery.json --write-out '%{http_code}' \
     -H 'Host: localhost:8090' \
-    http://127.0.0.1:8090/.well-known/openid-configuration)
+    http://127.0.0.1:8090/.well-known/openid-configuration) \
+    || fail 'OIDC discovery request failed'
 [ "$discovery_code" = 200 ] \
     || fail "OIDC discovery returned HTTP $discovery_code instead of 200"
 expected_issuer=http://localhost:8090
@@ -94,9 +101,11 @@ ok "OIDC issuer is $actual_issuer"
 rm -f /tmp/nginx-simulation-discovery.json
 ok 'real OIDC discovery route succeeds through nginx and Zitadel'
 
-console_code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+console_code=$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
+    --output /dev/null --write-out '%{http_code}' \
     -H 'Host: localhost:8090' \
-    http://127.0.0.1:8090/ui/console/)
+    http://127.0.0.1:8090/ui/console/) \
+    || fail 'admin console request failed'
 case "$console_code" in
     2??|3??) ok "GET /ui/console/ returned expected HTTP $console_code" ;;
     *) fail "GET /ui/console/ returned unexpected HTTP $console_code" ;;

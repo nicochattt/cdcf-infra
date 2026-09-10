@@ -74,28 +74,37 @@ docker compose exec -T nginx-host getent hosts zitadel >/dev/null \
   || fail 'nginx-host cannot resolve zitadel through Docker DNS'
 docker compose exec -T nginx-host getent hosts zitadel-login >/dev/null \
   || fail 'nginx-host cannot resolve zitadel-login through Docker DNS'
-docker compose exec -T nginx-host curl --fail --silent http://zitadel:8080/debug/ready >/dev/null \
+docker compose exec -T nginx-host curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+  http://zitadel:8080/debug/ready >/dev/null \
   || fail 'nginx-host cannot reach Zitadel directly'
-docker compose exec -T nginx-host curl --fail --silent \
+
+docker compose exec -T nginx-host curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
   http://zitadel-login:3000/ui/v2/login/healthy >/dev/null \
   || fail 'nginx-host cannot reach Zitadel Login V2 directly'
 pass 'nginx resolves and reaches both real application upstreams'
 
-curl --fail --silent http://127.0.0.1:8090/debug/ready >/dev/null \
+curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
+  http://127.0.0.1:8090/debug/ready >/dev/null \
   || fail 'full-path Zitadel readiness request failed'
-discovery="$(curl --fail --silent -H 'Host: localhost:8090' \
+
+discovery="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 -H 'Host: localhost:8090' \
   http://127.0.0.1:8090/.well-known/openid-configuration)" \
   || fail 'full-path OIDC discovery failed'
+
 issuer="$(sed -n 's/.*"issuer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$discovery")"
 [[ "$issuer" == "$expected_issuer" ]] \
   || fail "unexpected OIDC issuer: ${issuer:-missing}, expected $expected_issuer"
-curl --fail --silent -H 'Host: localhost:8090' \
+
+curl --fail --silent --show-error --connect-timeout 5 --max-time 15 -H 'Host: localhost:8090' \
   http://127.0.0.1:8090/ui/v2/login/healthy >/dev/null \
   || fail 'full-path Login V2 health route failed'
 pass 'client -> nginx -> Zitadel/Login V2 paths succeed with the expected issuer'
 
-openfga_code="$(curl --silent --output /tmp/integration-openfga.json --write-out '%{http_code}' \
-  -H "Authorization: Bearer $openfga_key" http://127.0.0.1:18081/stores)"
+openfga_code="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
+  --output /tmp/integration-openfga.json --write-out '%{http_code}' \
+  -H "Authorization: Bearer $openfga_key" http://127.0.0.1:18081/stores)" \
+  || fail 'authenticated OpenFGA request failed'
+
 [[ "$openfga_code" == 200 ]] || fail "authenticated OpenFGA request returned HTTP $openfga_code"
 grep -F '"stores"' /tmp/integration-openfga.json >/dev/null \
   || fail 'OpenFGA response is not a stores document'
