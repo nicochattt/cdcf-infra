@@ -2,31 +2,31 @@
 
 ## Purpose
 
-`local/application-simulation` is the application layer of the production-like
+`local/production-like/components/applications` is the application layer of the production-like
 local environment. It runs the real pinned Zitadel, Zitadel Login V2, and
 OpenFGA images, but contains neither PostgreSQL nor nginx.
 
-This is intentionally different from `local/auth`, the quick development mode:
+This is intentionally different from `local/dev`, the quick development mode:
 
 | Mode | Purpose | Database | Proxy |
 | --- | --- | --- | --- |
-| `local/auth` | Fast daily development | Simple PostgreSQL containers | Optional local overlay |
-| `local/application-simulation` | Production-like application boundaries | External host-like simulation | Separate, connected later |
+| `local/dev` | Fast daily development | Simple PostgreSQL containers | Optional local overlay |
+| `local/production-like/components/applications` | Production-like application boundaries | External host-like simulation | Separate, connected later |
 
 ## Architecture
 
 ```text
-                  future nginx-simulation
+                    nginx component
                            |
                            v
-                application-simulation
+                  applications
                  /        |         \
             Zitadel   Login V2    OpenFGA
                  \                    /
                   host.docker.internal
                            |
                            v
-                production-simulation
+               PostgreSQL host component
                       PostgreSQL
 ```
 
@@ -35,7 +35,7 @@ This is intentionally different from `local/auth`, the quick development mode:
 Start the existing PostgreSQL host simulation first:
 
 ```bash
-cd local/production-simulation
+cd local/production-like/components/postgres
 docker compose up -d --build --wait
 ./verify.sh
 ```
@@ -43,7 +43,7 @@ docker compose up -d --build --wait
 Then start this application layer:
 
 ```bash
-cd ../application-simulation
+cd ../applications
 docker compose config
 docker compose up -d --wait
 ./verify.sh
@@ -67,7 +67,7 @@ separate disposable PostgreSQL simulation as shown below.
 
 ## Zitadel and Login V2
 
-Zitadel advertises `http://localhost:8090`, matching the future local nginx
+Zitadel advertises `http://localhost:8090`, matching the local nginx
 entrypoint. Ports `127.0.0.1:18080` (Zitadel), `127.0.0.1:13000` (Login V2), and
 `127.0.0.1:18081` (OpenFGA) are diagnostic-only; the future nginx connection
 uses Docker DNS instead.
@@ -108,27 +108,27 @@ docker compose up -d --wait
 For a genuinely blank bootstrap, reset both disposable projects:
 
 ```bash
-cd local/application-simulation
+cd local/production-like/components/applications
 docker compose down -v
-cd ../production-simulation
+cd ../postgres
 docker compose down -v
 docker compose up -d --build --wait
-cd ../application-simulation
+cd ../applications
 docker compose up -d --wait
 ./verify.sh
 ```
 
-## Networks and future nginx integration
+## Networks and nginx integration
 
-The stable application network is named `cdcf-application-simulation`. A future
-integration step can attach `local/nginx-simulation` to this external network so
-its unchanged production configuration resolves `zitadel:8080` and
-`zitadel-login:3000`. nginx remains deliberately independent in this task.
+The stable application network is named `cdcf-application-simulation`. The
+top-level `local/production-like/compose.yaml` attaches the nginx component to
+the applications network so its production configuration resolves
+`zitadel:8080` and `zitadel-login:3000`.
 
 ## Limits
 
 - No Plesk, TLS, Let's Encrypt, real domain, VPS firewall, or host kernel.
 - PostgreSQL lifecycle belongs to its separate simulation.
 - Diagnostic ports bypass the future nginx path and bind only to loopback.
-- The nginx simulation has not yet been connected to this application network.
-- No global/full-simulation Compose exists yet.
+- The standalone component does not start nginx; use the top-level
+  `local/production-like/compose.yaml` for the complete path.

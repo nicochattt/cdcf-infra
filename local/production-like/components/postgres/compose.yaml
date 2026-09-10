@@ -6,7 +6,7 @@ services:
   # host.docker.internal hostname as the production compose.
   postgres-host:
     build:
-      context: ./postgres-host
+      context: .
     hostname: simulated-ubuntu-host
     environment:
       ZITADEL_DB_PASSWORD: ${ZITADEL_DB_PASSWORD:-local-zitadel-db-password}
@@ -31,7 +31,7 @@ services:
   # host-gateway mapping with the simulated Ubuntu host's fixed address.
   db-verifier:
     build:
-      context: ./postgres-host
+      context: .
     entrypoint: [sleep, infinity]
     environment:
       PGPASSWORD_ZITADEL: ${ZITADEL_DB_PASSWORD:-local-zitadel-db-password}

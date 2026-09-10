@@ -1,5 +1,5 @@
 # Local simulation of the reverse-proxy portion of the Plesk deployment.
-# Use together with docker-compose.yml; this is not Plesk itself.
+# Use together with compose.yaml; this is not Plesk itself.
 
 services:
   zitadel-runtime-init:

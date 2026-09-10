@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$script_dir"
+cd "$script_dir/.."
 
 pass() { echo "[failure-test] OK: $*"; }
 fail() { echo "[failure-test] FAIL: $*" >&2; exit 1; }
@@ -32,5 +32,5 @@ pass 'Login V2 outage is isolated while Zitadel backend routing remains availabl
 
 restore_stack
 trap - EXIT
-./verify.sh
+./scripts/verify.sh
 pass 'stack recovered and all integration checks pass'

@@ -15,7 +15,7 @@ SOURCE_CONFIG=/etc/nginx/production/zitadel.conf
 RUNTIME_CONFIG=/etc/nginx/conf.d/default.conf
 
 docker network inspect "$NETWORK" >/dev/null 2>&1 \
-    || fail "auth network $NETWORK does not exist; start local/auth first"
+    || fail "auth network $NETWORK does not exist; start local/dev first"
 ok "auth network $NETWORK exists"
 
 container_id=$(docker compose ps --quiet nginx-host)

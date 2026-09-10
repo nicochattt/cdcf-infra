@@ -1,6 +1,7 @@
-# Local auth stack
+# Fast local development
 
-This directory contains a disposable local Zitadel and OpenFGA environment.
+This directory contains a disposable Zitadel and OpenFGA environment optimized
+for fast daily development.
 The optional proxy overlay mounts the production nginx configuration as its
 read-only source:
 
@@ -15,12 +16,25 @@ production.
 ## Base stack
 
 ```bash
-cd local/auth
+cd local/dev
 docker compose up -d --wait
 ```
 
 Zitadel is exposed at `http://localhost:8080` and OpenFGA at
 `http://localhost:8081`.
+
+On a fresh first boot, the Zitadel administrator credentials are:
+
+```text
+Login: local-admin@zitadel.localhost
+Password: LocalTest1!
+```
+
+Zitadel v4.15.0 creates the bootstrap human before the default domain policy is
+fully applied. Consequently, neither `local-admin` nor `admin@example.test` is
+accepted as the login name for this particular user, even though the configured
+policy permits usernames without a domain and uses email addresses as usernames
+for regular users.
 
 ## Local Plesk proxy simulation
 
@@ -28,9 +42,9 @@ Login V2 is configured during Zitadel's first boot. Reset the disposable local
 volumes before switching to this variant:
 
 ```bash
-cd local/auth
-docker compose -f docker-compose.yml -f docker-compose.plesk.yml down -v
-docker compose -f docker-compose.yml -f docker-compose.plesk.yml up -d --wait
+cd local/dev
+docker compose -f compose.yaml -f compose.proxy.yaml down -v
+docker compose -f compose.yaml -f compose.proxy.yaml up -d --wait
 ```
 
 The proxy is exposed at `http://localhost:8090`; the admin console is available
@@ -60,8 +74,8 @@ remains unchanged.
 
 ```bash
 # Keep local database data
-docker compose -f docker-compose.yml -f docker-compose.plesk.yml down
+docker compose -f compose.yaml -f compose.proxy.yaml down
 
 # Delete all disposable local data
-docker compose -f docker-compose.yml -f docker-compose.plesk.yml down -v
+docker compose -f compose.yaml -f compose.proxy.yaml down -v
 ```

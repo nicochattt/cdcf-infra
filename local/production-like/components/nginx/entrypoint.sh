@@ -20,7 +20,7 @@ Expected exactly ${expected_count} occurrence(s) of:
 ${directive}
 Found: ${actual_count}
 
-Review local/nginx-simulation before continuing."
+Review local/production-like/components/nginx before continuing."
     fi
 }
 

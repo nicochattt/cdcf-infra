@@ -3,9 +3,9 @@ name: cdcf-nginx-simulation
 services:
   nginx-host:
     build:
-      context: ./nginx-host
+      context: .
     volumes:
-      - ../../auth/nginx/zitadel.conf:/etc/nginx/production/zitadel.conf:ro
+      - ../../../../auth/nginx/zitadel.conf:/etc/nginx/production/zitadel.conf:ro
     ports:
       - '127.0.0.1:8090:80'
     networks:

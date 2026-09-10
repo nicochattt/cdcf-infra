@@ -5,7 +5,7 @@ readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly expected_database_ip='172.31.250.10'
 readonly expected_issuer='http://localhost:8090'
 readonly openfga_key="${OPENFGA_PRESHARED_KEY:-local-openfga-api-key}"
-cd "$script_dir"
+cd "$script_dir/.."
 
 pass() { echo "[verify] OK: $*"; }
 fail() { echo "[verify] FAIL: $*" >&2; exit 1; }

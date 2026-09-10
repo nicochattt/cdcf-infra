@@ -2,14 +2,41 @@
 
 ## Environments
 
-- `local/auth`: quick mode for daily development.
-- `local/production-simulation`: standalone PostgreSQL host component test.
-- `local/application-simulation`: standalone application component test.
-- `local/nginx-simulation`: standalone nginx/Plesk-like component test.
-- `local/integration`: full production-like assembly of those three components.
+- `local/dev`: quick mode for daily development.
+- `local/production-like/components/postgres`: standalone PostgreSQL host component test.
+- `local/production-like/components/applications`: standalone application component test.
+- `local/production-like/components/nginx`: standalone nginx/Plesk-like component test.
+- `local/production-like/scenarios`: hybrid assemblies isolating one production-like boundary.
+- `local/production-like`: full production-like assembly of those three components.
 
 The integration Compose uses Docker Compose `include`; it does not duplicate any
 service implementation.
+
+## Hybrid scenarios
+
+Use the PostgreSQL scenario to exercise the simulated Ubuntu/PostgreSQL host with
+the pinned Zitadel, Login V2 and OpenFGA images, without nginx:
+
+```bash
+docker compose -f local/production-like/scenarios/compose.postgres.yaml \
+  up -d --build --wait
+```
+
+Use the nginx scenario to exercise the Ubuntu/nginx component with the fast
+containerized databases and application services from `local/dev`:
+
+```bash
+docker compose -f local/production-like/scenarios/compose.nginx.yaml \
+  up -d --build --wait
+```
+
+The nginx scenario includes the dev proxy overlay to configure Login V2 during
+Zitadel's first boot, but places `plesk-proxy` behind a disabled profile so only
+the production-like `nginx-host` publishes port 8090.
+
+Run only one local environment or scenario at a time: the dev, hybrid and full
+production-like projects intentionally publish some of the same loopback ports.
+Stop the active project with the same Compose file before switching scenarios.
 
 ```text
 localhost:8090
@@ -33,8 +60,8 @@ localhost:8090
 
 ## Composition and overrides
 
-`compose.yaml` includes the Compose files from `production-simulation`,
-`application-simulation`, and `nginx-simulation`. Small overrides provide only:
+`compose.yaml` includes the Compose files from `components/postgres`,
+`components/applications`, and `components/nginx`. Small overrides provide only:
 
 - the two integration network names;
 - application dependencies on healthy PostgreSQL;
@@ -60,19 +87,19 @@ before running the integration project (plain `down`, without `-v`, preserves
 their independent state):
 
 ```bash
-cd local/production-simulation && docker compose down
-cd ../application-simulation && docker compose down
-cd ../nginx-simulation && docker compose down
+docker compose -f local/production-like/components/postgres/compose.yaml down
+docker compose -f local/production-like/components/applications/compose.yaml down
+docker compose -f local/production-like/components/nginx/compose.yaml down
 ```
 
 Then:
 
 ```bash
-cd ../integration
+cd local/production-like
 docker compose config
 docker compose build
 docker compose up -d --build --wait
-./verify.sh
+./scripts/verify.sh
 ```
 
 The component verification scripts are not invoked automatically: each changes
@@ -83,7 +110,7 @@ component-level assertions.
 Optional, recoverable boundary-failure checks:
 
 ```bash
-./failure-tests.sh
+./scripts/failure-tests.sh
 ```
 
 This briefly stops PostgreSQL and proves an application DB operation fails, then
@@ -97,16 +124,16 @@ A normal restart preserves all PostgreSQL and PAT data:
 ```bash
 docker compose down
 docker compose up -d --wait
-./verify.sh
+./scripts/verify.sh
 ```
 
 A full reset removes only resources owned by the `cdcf-integration` project,
 including the two PostgreSQL volumes and the Zitadel PAT runtime volume:
 
 ```bash
-./reset.sh
+./scripts/reset.sh
 docker compose up -d --build --wait
-./verify.sh
+./scripts/verify.sh
 ```
 
 Never use the full reset for production or for unrelated Compose projects.

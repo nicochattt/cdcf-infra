@@ -3,7 +3,7 @@
 This environment approximates PostgreSQL installed natively on an Ubuntu VPS,
 while remaining fully disposable and runnable with Docker.
 
-It is separate from `local/auth/`: that stack is optimized for fast application
+It is separate from `local/dev/`: that stack is optimized for fast application
 development, while this one focuses on the production host/PostgreSQL boundary.
 
 ## What it reproduces
@@ -87,7 +87,7 @@ docker compose up -d --build --wait
 ## Build, start, and verify
 
 ```bash
-cd local/production-simulation
+cd local/production-like/components/postgres
 docker compose config
 docker compose build
 docker compose up -d --wait

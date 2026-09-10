@@ -13,7 +13,7 @@ compose() {
 }
 
 db_query() {
-  docker compose -f ../production-simulation/docker-compose.yml exec -T postgres-host \
+  docker compose -f ../postgres/compose.yaml exec -T postgres-host \
     runuser -u postgres -- psql --dbname zitadel --tuples-only --no-align \
     --command "$1"
 }
@@ -45,7 +45,7 @@ assert_healthy() {
 }
 
 docker network inspect cdcf-production-simulation_production-simulation >/dev/null 2>&1 \
-  || fail 'PostgreSQL simulation network is missing; start local/production-simulation first'
+  || fail 'PostgreSQL simulation network is missing; start local/production-like/components/postgres first'
 docker network inspect cdcf-application-simulation >/dev/null 2>&1 \
   || fail 'application network is missing'
 pass 'database and application networks exist'
