@@ -55,26 +55,16 @@ services:
 
   plesk-proxy:
     image: nginx:alpine
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        sed \
-          -e 's/proxy_set_header Host $$host;/proxy_set_header Host localhost:8090;/' \
-          -e 's/proxy_set_header X-Forwarded-Host $$host;/proxy_set_header X-Forwarded-Host localhost:8090;/' \
-          -e 's/proxy_set_header X-Forwarded-Proto https;/proxy_set_header X-Forwarded-Proto http;/' \
-          /etc/nginx/production/zitadel.conf \
-          > /etc/nginx/conf.d/default.conf
-        exec nginx -g 'daemon off;'
+    environment:
+      NGINX_FORWARDED_PROTO: http
     depends_on:
       zitadel:
         condition: service_healthy
       zitadel-login:
         condition: service_healthy
     volumes:
-      # Production remains the single source. The command above generates an
-      # ephemeral config with only local authority/scheme directives changed.
-      - ../../auth/nginx/zitadel.conf:/etc/nginx/production/zitadel.conf:ro
+      # The official nginx entrypoint renders the same template as production.
+      - ../../auth/nginx/zitadel.conf:/etc/nginx/templates/default.conf.template:ro
     ports:
       - '127.0.0.1:8090:80'
     healthcheck:

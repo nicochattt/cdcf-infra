@@ -25,30 +25,22 @@ Review local/production-like/components/nginx before continuing."
 }
 
 [ -f "$SOURCE_CONFIG" ] || fail "production nginx configuration is missing: $SOURCE_CONFIG"
+: "${NGINX_FORWARDED_PROTO:?NGINX_FORWARDED_PROTO is required}"
 
-# These exact-count assertions intentionally make production changes fail fast.
-assert_count 2 'proxy_set_header Host $host;'
-assert_count 2 'proxy_set_header X-Forwarded-Host $host;'
-assert_count 2 'proxy_set_header X-Forwarded-Proto https;'
+# The shared source must remain environment-neutral and preserve the client Host
+# header, including its local port. Only the forwarded protocol is substituted.
+assert_count 2 'proxy_set_header Host $http_host;'
+assert_count 2 'proxy_set_header X-Forwarded-Host $http_host;'
+assert_count 2 'proxy_set_header X-Forwarded-Proto ${NGINX_FORWARDED_PROTO};'
 
-sed \
-    -e 's/proxy_set_header Host $host;/proxy_set_header Host localhost:8090;/g' \
-    -e 's/proxy_set_header X-Forwarded-Host $host;/proxy_set_header X-Forwarded-Host localhost:8090;/g' \
-    -e 's/proxy_set_header X-Forwarded-Proto https;/proxy_set_header X-Forwarded-Proto http;/g' \
-    "$SOURCE_CONFIG" > "$RUNTIME_CONFIG"
+case "$NGINX_FORWARDED_PROTO" in
+    http|https) ;;
+    *) fail 'NGINX_FORWARDED_PROTO must be either http or https' ;;
+esac
 
-# Reverse only the approved local substitutions and require byte-for-byte
-# equality with the read-only production source. Any extra drift is fatal.
-comparison_config=$(mktemp)
-trap 'rm -f "$comparison_config"' EXIT
-sed \
-    -e 's/proxy_set_header Host localhost:8090;/proxy_set_header Host $host;/g' \
-    -e 's/proxy_set_header X-Forwarded-Host localhost:8090;/proxy_set_header X-Forwarded-Host $host;/g' \
-    -e 's/proxy_set_header X-Forwarded-Proto http;/proxy_set_header X-Forwarded-Proto https;/g' \
-    "$RUNTIME_CONFIG" > "$comparison_config"
-
-cmp -s "$SOURCE_CONFIG" "$comparison_config" || fail \
-    'runtime configuration differs from production beyond the approved local transformations.'
+# Pass an explicit variable list so envsubst never expands native nginx
+# variables such as $http_host, $remote_addr, or $proxy_add_x_forwarded_for.
+envsubst '${NGINX_FORWARDED_PROTO}' < "$SOURCE_CONFIG" > "$RUNTIME_CONFIG"
 
 nginx -t
 printf '%s\n' '[nginx-simulation] Configuration validated; starting nginx.'

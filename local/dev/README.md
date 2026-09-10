@@ -57,18 +57,14 @@ Plesk-managed TLS, Let's Encrypt, VPS filesystem permissions,
 `host.docker.internal`, host PostgreSQL, or production `pg_hba.conf` rules.
 The local databases are containerized for ease of use.
 
-At container startup, the overlay generates an ephemeral nginx configuration
-from that source and changes only these environment-specific directives:
+The shared template uses nginx's `$http_host` for `Host` and
+`X-Forwarded-Host`, preserving the client port locally while retaining the same
+behavior for the production hostname. Its only environment-specific value is
+`NGINX_FORWARDED_PROTO`: production sets it to `https`, while this overlay sets
+it to `http`.
 
-- `Host` becomes `localhost:8090`;
-- `X-Forwarded-Host` becomes `localhost:8090`;
-- `X-Forwarded-Proto` becomes `http`.
-
-These directives cannot be overridden from a second nginx file without
-redeclaring the complete `location` blocks. Doing that would duplicate the
-routing and CSP-sensitive configuration this stack is intended to test. The
-generated file exists only inside the running container; the production source
-remains unchanged.
+The official nginx image renders the mounted template into `conf.d` at container
+startup. This avoids duplicating the routing and CSP-sensitive configuration.
 
 ## Stop or reset
 

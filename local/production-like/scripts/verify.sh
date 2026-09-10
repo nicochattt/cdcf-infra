@@ -83,12 +83,14 @@ pass 'nginx resolves and reaches both real application upstreams'
 
 curl --fail --silent http://127.0.0.1:8090/debug/ready >/dev/null \
   || fail 'full-path Zitadel readiness request failed'
-discovery="$(curl --fail --silent http://127.0.0.1:8090/.well-known/openid-configuration)" \
+discovery="$(curl --fail --silent -H 'Host: localhost:8090' \
+  http://127.0.0.1:8090/.well-known/openid-configuration)" \
   || fail 'full-path OIDC discovery failed'
 issuer="$(sed -n 's/.*"issuer"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$discovery")"
 [[ "$issuer" == "$expected_issuer" ]] \
   || fail "unexpected OIDC issuer: ${issuer:-missing}, expected $expected_issuer"
-curl --fail --silent http://127.0.0.1:8090/ui/v2/login/healthy >/dev/null \
+curl --fail --silent -H 'Host: localhost:8090' \
+  http://127.0.0.1:8090/ui/v2/login/healthy >/dev/null \
   || fail 'full-path Login V2 health route failed'
 pass 'client -> nginx -> Zitadel/Login V2 paths succeed with the expected issuer'
 

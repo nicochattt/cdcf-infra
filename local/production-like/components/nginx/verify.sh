@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+readonly script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$script_dir"
+
 ok() {
     printf '%s\n' "[verify] OK: $*"
 }
@@ -62,10 +65,10 @@ assert_runtime_count() {
         || fail "expected $expected_count occurrence(s) of '$directive', found $actual_count"
 }
 
-assert_runtime_count 2 'proxy_set_header Host localhost:8090;'
-assert_runtime_count 2 'proxy_set_header X-Forwarded-Host localhost:8090;'
+assert_runtime_count 2 'proxy_set_header Host $http_host;'
+assert_runtime_count 2 'proxy_set_header X-Forwarded-Host $http_host;'
 assert_runtime_count 2 'proxy_set_header X-Forwarded-Proto http;'
-ok 'local Host and forwarded-header transformations are exact'
+ok 'shared Host handling and local forwarded protocol are exact'
 
 docker compose exec -T nginx-host grep -F 'Content-Security-Policy' "$RUNTIME_CONFIG" >/dev/null \
     || fail 'production CSP is missing from runtime configuration'
@@ -76,6 +79,7 @@ curl --fail --silent http://127.0.0.1:8090/debug/ready >/dev/null \
 ok 'GET /debug/ready succeeds through local nginx'
 
 discovery_code=$(curl --silent --output /tmp/nginx-simulation-discovery.json --write-out '%{http_code}' \
+    -H 'Host: localhost:8090' \
     http://127.0.0.1:8090/.well-known/openid-configuration)
 [ "$discovery_code" = 200 ] \
     || fail "OIDC discovery returned HTTP $discovery_code instead of 200"
@@ -91,6 +95,7 @@ rm -f /tmp/nginx-simulation-discovery.json
 ok 'real OIDC discovery route succeeds through nginx and Zitadel'
 
 console_code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    -H 'Host: localhost:8090' \
     http://127.0.0.1:8090/ui/console/)
 case "$console_code" in
     2??|3??) ok "GET /ui/console/ returned expected HTTP $console_code" ;;

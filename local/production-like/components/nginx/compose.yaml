@@ -4,6 +4,8 @@ services:
   nginx-host:
     build:
       context: .
+    environment:
+      NGINX_FORWARDED_PROTO: http
     volumes:
       - ../../../../auth/nginx/zitadel.conf:/etc/nginx/production/zitadel.conf:ro
     ports:

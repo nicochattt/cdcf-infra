@@ -8,6 +8,7 @@ RUN apt-get update \
         coreutils \
         curl \
         diffutils \
+        gettext-base \
         nginx \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/nginx/sites-enabled/default

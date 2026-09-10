@@ -27,29 +27,31 @@ This component has two supported uses:
 This production-like component builds its own Ubuntu 24.04 image and installs
 nginx from the Ubuntu packages. It does not reuse the development proxy container
 or image. Both implementations consume the same production nginx configuration,
-but this component additionally validates its transformation before nginx starts.
+but this component additionally validates the shared template before nginx starts.
 
 ## Runtime configuration
 
-Production expects HTTPS termination and the public authentication hostname.
-The local environment uses plain HTTP on `localhost:8090`. At startup,
-`entrypoint.sh` generates an ephemeral nginx configuration and changes only:
+Production expects HTTPS termination, while the local environment uses plain
+HTTP on `localhost:8090`. The shared template handles both environments:
 
-- `Host`: `$host` to `localhost:8090`;
-- `X-Forwarded-Host`: `$host` to `localhost:8090`;
-- `X-Forwarded-Proto`: `https` to `http`.
+- `$http_host` forwards the complete client Host header, preserving port 8090
+  locally and the unmodified public hostname in production;
+- `${NGINX_FORWARDED_PROTO}` is rendered as `https` in production and `http`
+  locally.
 
 Before nginx starts, the entrypoint:
 
-1. verifies the exact number of production directives to transform;
-2. applies the three local substitutions;
-3. reverses them and compares the result byte-for-byte with the production file;
+1. verifies that the shared Host and protocol directives occur exactly twice;
+2. rejects protocol values other than `http` and `https`;
+3. runs `envsubst` with an explicit allowlist containing only
+   `NGINX_FORWARDED_PROTO`;
 4. runs `nginx -t`;
 5. starts nginx in the foreground.
 
-This makes a production configuration change fail explicitly when the local
-transformation needs to be reviewed. The production CSP, locations, comments and
-all other directives remain unchanged.
+The explicit allowlist prevents native nginx variables such as `$http_host`,
+`$remote_addr` and `$proxy_add_x_forwarded_for` from being expanded accidentally.
+The production CSP, locations, comments and all other directives remain
+unchanged.
 
 ## Complete production-like integration
 
@@ -109,7 +111,7 @@ docker compose up -d --build --wait
 
 In this mode, `nginx-host` joins the external development network named
 `cdcf-auth-test_default`. The standalone verification checks the production
-configuration mount, approved local substitutions, CSP preservation, Docker DNS,
+configuration mount, template rendering, CSP preservation, Docker DNS,
 both real upstreams, OIDC discovery and the admin-console route.
 
 ## What this does not reproduce

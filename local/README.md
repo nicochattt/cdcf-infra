@@ -81,3 +81,27 @@ local/
     ├── scenarios/               hybrid boundary assemblies
     └── scripts/                 integration checks and reset helpers
 ```
+
+## Continuous integration
+
+`.github/workflows/validate-local.yml` validates every local shell script and
+Compose model when `local/**` or the shared production nginx configuration
+changes. These lightweight checks run on pull requests, merge-queue entries and
+pushes to `main`.
+
+The same workflow exposes a manual `workflow_dispatch` run that additionally
+builds, starts and verifies the complete production-like environment. Its cleanup
+step always removes the CI project's containers, networks and volumes.
+
+Run the required lightweight checks locally with:
+
+```bash
+docker compose -f local/dev/compose.yaml config --quiet
+docker compose -f local/dev/compose.yaml -f local/dev/compose.proxy.yaml config --quiet
+docker compose -f local/production-like/components/postgres/compose.yaml config --quiet
+docker compose -f local/production-like/components/applications/compose.yaml config --quiet
+docker compose -f local/production-like/components/nginx/compose.yaml config --quiet
+docker compose -f local/production-like/scenarios/compose.postgres.yaml config --quiet
+docker compose -f local/production-like/scenarios/compose.nginx.yaml config --quiet
+docker compose -f local/production-like/compose.yaml config --quiet
+```

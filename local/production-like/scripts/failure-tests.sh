@@ -21,6 +21,7 @@ docker compose up -d --wait postgres-host >/dev/null
 
 docker compose stop zitadel-login >/dev/null
 login_code="$(curl --max-time 15 --silent --output /dev/null --write-out '%{http_code}' \
+  -H 'Host: localhost:8090' \
   http://127.0.0.1:8090/ui/v2/login/healthy || true)"
 [[ "$login_code" == 000 || "$login_code" == 502 || "$login_code" == 503 || "$login_code" == 504 ]] \
   || fail "Login V2 outage returned HTTP $login_code, expected timeout or proxy 502/503/504"
