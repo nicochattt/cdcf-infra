@@ -3,6 +3,36 @@
 This directory provides two complementary Docker environments for auth and
 authorization development.
 
+## Important: Docker simulation, not production
+
+Everything under `local/` is designed to run locally with Docker. The
+`production-like` name means that the environment reproduces selected service,
+network and dependency boundaries from production; it does **not** mean that it
+is a complete or exact copy of the production VPS.
+
+In particular:
+
+- Plesk is not installed or executed. A containerized nginx service reproduces
+  only the internal reverse-proxy routes and headers relevant to Zitadel and
+  Login V2;
+- TLS termination, Plesk-generated configuration, certificate renewal and
+  Let's Encrypt are not reproduced;
+- the production-like PostgreSQL host is still a Docker container. It installs
+  PostgreSQL from Ubuntu packages to approximate the host layout, but it is not
+  a real VPS host installation;
+- Docker networks approximate the application-to-host and reverse-proxy
+  boundaries, but they do not reproduce the VPS firewall, kernel, bridge,
+  routing or public network;
+- production users, secrets, volumes, permissions, traffic, backups and data are
+  never used;
+- systemd, Plesk service management and operator-driven production restarts are
+  outside the scope of these environments.
+
+A successful local or production-like verification proves only the behaviors
+explicitly checked by these Docker environments. It must not be treated as
+approval to deploy a Compose, PostgreSQL, nginx or Plesk change directly to
+production without the normal review and production-specific checks.
+
 ## Fast development
 
 Use [`dev`](dev/) for daily work. It runs the pinned Zitadel and OpenFGA images
@@ -36,10 +66,6 @@ docker compose -f local/production-like/scenarios/compose.postgres.yaml up -d --
 # Production-like nginx with the fast dev databases and application stack
 docker compose -f local/production-like/scenarios/compose.nginx.yaml up -d --build --wait
 ```
-
-This remains a Docker approximation. It does not reproduce Plesk, managed TLS,
-the VPS kernel, firewall rules, permissions, production secrets, or production
-data.
 
 ## Layout
 
