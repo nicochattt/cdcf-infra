@@ -412,13 +412,81 @@ This procedure is a candidate for promotion to a CLI script (e.g. `auth/setup-sm
 
 ### 7.1 Backups [👤 Manual setup, 🤖 cron-automated thereafter]
 
-The script `auth/backup/pg-dump.sh` produces gzipped pg_dump output of both DBs and prunes anything older than 14 days. Wire into cron:
+The script `auth/backup/pg-dump.sh` produces gzipped pg_dump output of the auth DBs (`zitadel`, `openfga`) plus everything named in `PEER_DBS` — `litcal_staging` and `litcal_production` in production — and prunes anything older than 14 days. Wire into cron:
 
 ```cron
 15 3 * * * /opt/cdcf-auth/auth/backup/pg-dump.sh >> /var/log/cdcf-auth-backup.log 2>&1
 ```
 
-Dumps land in `/var/backups/cdcf-auth/`. **Off-server copy is the operator's responsibility** — use Plesk's backup tool, rclone, restic, or your existing off-server backup channel.
+**Run it detached when running it by hand.** A multi-GB dump outlives a flaky SSH
+session, and a disconnect takes the script with it:
+
+```bash
+sudo setsid nohup /opt/cdcf-auth/auth/backup/pg-dump.sh > /tmp/bk-run.log 2>&1 < /dev/null &
+```
+
+Cron is unaffected — it never had a terminal to lose. Dumps are written to a `.part`
+name and renamed only when complete, so an interrupted run leaves no file that could
+be mistaken for a good backup; the partial is removed on exit, and anything a SIGKILL
+left behind is swept by the next run.
+
+Dumps land in `/var/backups/cdcf-auth/` and are then copied off-server over SFTP, to the same host Plesk's own backups use (`SFTP_*` in `.env.production`). The push is part of the script rather than a follow-on step: a dump that never leaves the machine does not survive the failure it exists for.
+
+**Plesk's backups do NOT cover these databases, and cannot be made to.** Plesk backs up what is in its own registry, and every database there is MySQL; `zitadel` and `openfga` are host PostgreSQL databases it has no knowledge of. This script is the only thing backing them up. The same was true of `litcal_staging` and `litcal_production` until they were added to `PEER_DBS`; `bibleget_dev` and the `marriage_booklet_*` set are still uncovered.
+
+The job authenticates with its own key (`/root/.ssh/cdcf-backup`), not Plesk's. Plesk's key lives under `/opt/psa/var/modules/sftp-backup/ssh-keys/` with a randomly generated filename the extension may regenerate on update; a job that borrowed it would start failing the day it did.
+
+Failure behaviour is deliberate: a failed or incomplete upload exits non-zero and leaves the local dumps in place, and the retention prune never runs after one — a run that could not get its dump off the box must not also delete the older ones that did. Success is confirmed against a remote directory listing rather than sftp's own exit code, since `put` can report success for a transfer the far end truncated.
+
+Set `SFTP_HOST=` (empty) to disable the push and keep dumps local only, which is the right setting anywhere but production.
+
+`zitadel` and `openfga` are dumped with the passwords in `.env.production`. The `PEER_DBS` databases are dumped through the local `postgres` superuser instead: their credentials live in the API's own env file on a different vhost, and copying a second service's password in here — to reach a database the local superuser already can — would only create another credential to rotate. A `PEER_DBS` name that does not exist is a hard error, checked before anything is written, so a typo cannot leave a half-finished run.
+
+Large databases (`LARGE_DBS`) are handled differently from the rest: dumped at `LARGE_GZIP_LEVEL` under `nice`/`ionice`, and **deleted locally once the off-server copy is confirmed**. `/var/backups` cannot hold a 14-day window of multi-GB dumps, and `gzip -9` over several GB is heavy enough to disturb the host — measured on `bibleget_dev` (4.7 GB), it was enough to drop an SSH session. The remote keeps their history; a restore of one fetches from there.
+
+**Host configuration** (`CONFIG_PATHS`) is archived alongside the dumps and is **always age-encrypted**; the script refuses to run if `AGE_RECIPIENT` is unset. This is not ceremony: `ZITADEL_MASTERKEY` lives in `/opt/cdcf-auth/auth/.env.production`, and the `zitadel` dump it decrypts is going to the same destination. Encrypting to a key whose private half never touches the server is what keeps that co-location from undoing the "back the masterkey up separately" rule.
+
+Plesk **does** back up the vhost env files — verified by extracting an actual backup archive, which contains `httpdocs/LiturgicalCalendar/.env.production` and `api/dev/.env.staging`. `CONFIG_PATHS` is only for what Plesk cannot reach: `/opt`, `/etc`, and the service PATs under `runtime/zitadel-data/`.
+
+To inspect the config archive without writing anything — worth doing periodically to
+confirm the offline key still decrypts it, which is the only part of this backup no
+automated check can prove:
+
+```bash
+set -o pipefail
+age -d -i cdcf-backup.key config-<ts>.tar.gz.age | tar -tz
+```
+
+`pipefail` is load-bearing here, not boilerplate. Without it the pipeline reports
+`tar`'s status, and `tar` can list what it managed to read and exit 0 while `age`
+failed — so a truncated or undecryptable archive would look like a passing check,
+which is the one thing this command exists to rule out.
+
+`tar -t` lists and extracts nothing. Members are stored as absolute paths, so tar
+reports `Removing leading '/' from member names` — expected, and what makes the
+staged restore below land in the right place.
+
+To restore, extract to a STAGING directory and copy back deliberately:
+
+```bash
+set -o pipefail
+staging=$(mktemp -d)          # fresh, mode 700, not a predictable name
+age -d -i cdcf-backup.key config-<ts>.tar.gz.age | tar -xz -C "$staging"
+# then inspect, and copy only what you meant to restore, e.g.
+#   cp "$staging/opt/cdcf-auth/auth/.env.production" /opt/cdcf-auth/auth/
+rm -rf "$staging"             # it held the masterkey in cleartext
+```
+
+`mktemp -d` rather than a fixed `/tmp/cfg-restore`: this archive expands to
+`ZITADEL_MASTERKEY` and both service PATs in cleartext, and a predictable path in a
+world-writable directory can be pre-created by another local user, who would then own
+the directory the secrets land in. The staging copy is deleted afterwards for the same
+reason.
+
+Do **not** pipe straight into `tar -xz -C /`. That overwrites live configuration in
+place with whatever the archive holds — including a `.env.production` whose
+`OPENFGA_MODEL_ID` and other pins may be older than what is deployed, which would
+silently roll the running system back to the state of the backup.
 
 **Critical**: the `ZITADEL_MASTERKEY` is NOT in pg_dump. Without it, the dump is mathematically unrecoverable (secrets in events are encrypted). Back up the masterkey separately, out-of-band, in your password manager.
 
