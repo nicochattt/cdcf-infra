@@ -93,9 +93,12 @@ docker compose exec -T nginx-host curl --fail --silent --show-error --connect-ti
   || fail 'nginx-host cannot reach Zitadel Login V2 directly'
 pass 'nginx resolves and reaches both real application upstreams'
 
-curl --fail --silent --show-error --connect-timeout 5 --max-time 15 \
-  http://127.0.0.1:8090/debug/ready >/dev/null \
+readiness_code="$(curl --silent --show-error --connect-timeout 5 --max-time 15 \
+  --output /dev/null --write-out '%{http_code}' \
+  http://127.0.0.1:8090/debug/ready)" \
   || fail 'full-path Zitadel readiness request failed'
+[[ "$readiness_code" == 200 ]] \
+  || fail "full-path Zitadel readiness returned HTTP $readiness_code, expected 200"
 
 discovery="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 -H 'Host: localhost:8090' \
   http://127.0.0.1:8090/.well-known/openid-configuration)" \
